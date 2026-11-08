@@ -6,7 +6,9 @@ Choose between a Product Quote and an AMC / Renewal Quote. Renewal quotes includ
 
 Use **Manage entities** in the quote form to enter up to five issuing entity names and addresses. You can also add one shared company logo, which appears on proposals for any selected entity. Entity details and the logo are saved in this browser.
 
-Enter a proposal reference in the quote form to show it below the proposal heading. The issue date is displayed in the proposal header.
+Enter reference details in the quote form; the proposal prefixes them with **Product -** or **Renewal -** based on the quote type. Proposal numbers are generated in sequence as `TECS-<first four alphanumeric characters of person name>-DDMMYYYY-<six-character sequence>`. The sequence is stored in this browser, so it is shared by its quotes and does not synchronize across browsers or devices.
+
+The printed proposal centers the heading and shows the recipient's person name, company, and address under **To,**, followed by the standard greeting.
 
 ## Run locally
 

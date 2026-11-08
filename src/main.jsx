@@ -31,6 +31,21 @@ const mappingFields = [
 
 const makeId = () => Math.random().toString(36).slice(2, 10);
 const entityStorageKey = 'quotegen.entities.v1';
+const quoteSequenceStorageKey = 'quotegen.quote-sequence.v1';
+const maxQuoteSequence = 36 ** 6 - 1;
+function allocateQuoteSequence() {
+  const savedSequence = localStorage.getItem(quoteSequenceStorageKey);
+  if (savedSequence !== null && !/^\d+$/.test(savedSequence)) {
+    throw new Error('The saved quote sequence is invalid.');
+  }
+  const currentSequence = savedSequence === null ? 0 : Number(savedSequence);
+  if (!Number.isSafeInteger(currentSequence) || currentSequence < 0 || currentSequence >= maxQuoteSequence) {
+    throw new Error('The saved quote sequence has reached its limit.');
+  }
+  const nextSequence = currentSequence + 1;
+  localStorage.setItem(quoteSequenceStorageKey, String(nextSequence));
+  return nextSequence;
+}
 const emptyEntities = () => Array.from({ length: 5 }, (_, index) => ({
   id: `entity-${index + 1}`,
   name: '',
@@ -80,6 +95,11 @@ const formatDate = (value) => value
 const formatProposalDate = (value) => value
   ? new Date(`${value}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: '2-digit' })
   : '—';
+const formatQuoteNumber = (customer, date, sequence) => {
+  const customerCode = String(customer ?? '').replace(/[^a-z0-9]/gi, '').slice(0, 4).toUpperCase() || 'CUST';
+  const [year, month, day] = (date || localDate()).split('-');
+  return `TECS-${customerCode}-${day}${month}${year}-${sequence.toString(36).toUpperCase().padStart(6, '0')}`;
+};
 
 function normalized(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -97,6 +117,13 @@ function detectMapping(headers) {
 
 function App() {
   const [quoteType, setQuoteType] = useState('product');
+  const [quoteSequence] = useState(() => {
+    try {
+      return { value: allocateQuoteSequence(), error: '' };
+    } catch (error) {
+      return { value: null, error: error instanceof Error ? error.message : 'Browser storage is unavailable.' };
+    }
+  });
   const [entities, setEntities] = useState(readEntities);
   const [entityDraft, setEntityDraft] = useState(entities);
   const [companyLogo, setCompanyLogo] = useState(readCompanyLogo);
@@ -118,7 +145,6 @@ function App() {
     { id: makeId(), ...sampleCatalog[2], quantity: 1 },
   ]);
   const [quote, setQuote] = useState({
-    number: 'Q-2026-0142',
     date: localDate(),
     validUntil: addDays(30),
     reference: '',
@@ -141,6 +167,9 @@ function App() {
   const activeSheet = workbookSheets.find((sheet) => sheet.name === selectedSheetName);
   const headers = activeSheet?.rows[0] ?? [];
   const selectedEntity = entities.find((entity) => entity.id === quote.entityId && entity.name.trim());
+  const quoteNumber = quoteSequence.value === null
+    ? 'Unavailable'
+    : formatQuoteNumber(quote.customer, quote.date, quoteSequence.value);
   const totals = useMemo(() => {
     const subtotal = lineItems.reduce((sum, item) => sum + item.quantity * item.price, 0);
     const discount = subtotal * (Number(quote.discount) || 0) / 100;
@@ -311,7 +340,7 @@ function App() {
         <span className="workspace-label">QUOTE WORKSPACE</span>
         <div className="header-actions">
           <span className="local-indicator"><span /> On this device</span>
-          <button className="button button-primary header-print" onClick={() => window.print()}>
+          <button className="button button-primary header-print" disabled={quoteSequence.value === null} onClick={() => window.print()}>
             <Printer size={16} strokeWidth={2} /> Print quote
           </button>
         </div>
@@ -324,7 +353,7 @@ function App() {
             <h1>Build a quote<span>.</span></h1>
             <p className="page-subtitle">A clear offer, ready to send.</p>
           </div>
-          <div className="heading-number"><span>QUOTE</span><strong>{quote.number || 'Untitled'}</strong></div>
+          <div className="heading-number"><span>QUOTE</span><strong>{quoteNumber}</strong></div>
         </div>
 
         <div className="workspace">
@@ -400,15 +429,15 @@ function App() {
               </div>
               {!selectedEntity && <p className="entity-help">Set up your entities, then choose which one is issuing this quote.</p>}
               <div className="form-grid">
-                <label className="form-field"><span>Customer name</span><input value={quote.customer} onChange={(event) => setQuoteField('customer', event.target.value)} placeholder="e.g. Alex Morgan" /></label>
-                <label className="form-field"><span>Company</span><input value={quote.customerCompany} onChange={(event) => setQuoteField('customerCompany', event.target.value)} placeholder="e.g. Northstar Labs" /></label>
+                <label className="form-field"><span>Person name</span><input value={quote.customer} onChange={(event) => setQuoteField('customer', event.target.value)} placeholder="e.g. Alex Morgan" /></label>
+                <label className="form-field"><span>Company name</span><input value={quote.customerCompany} onChange={(event) => setQuoteField('customerCompany', event.target.value)} placeholder="e.g. Northstar Labs" /></label>
                 <label className="form-field"><span>Email</span><input type="email" value={quote.customerEmail} onChange={(event) => setQuoteField('customerEmail', event.target.value)} placeholder="name@company.com" /></label>
-                <label className="form-field"><span>Quote number</span><input value={quote.number} onChange={(event) => setQuoteField('number', event.target.value)} /></label>
-                <label className="form-field"><span>Reference</span><input value={quote.reference} onChange={(event) => setQuoteField('reference', event.target.value)} placeholder="e.g. RFQ-2026-014" /></label>
+                <label className="form-field"><span>Reference details</span><input value={quote.reference} onChange={(event) => setQuoteField('reference', event.target.value)} placeholder="e.g. RFQ-2026-014" /></label>
                 <label className="form-field"><span>Issue date</span><input type="date" value={quote.date} onChange={(event) => setQuoteField('date', event.target.value)} /></label>
                 <label className="form-field"><span>Valid until</span><input type="date" value={quote.validUntil} onChange={(event) => setQuoteField('validUntil', event.target.value)} /></label>
                 <label className="form-field"><span>Your email</span><input type="email" value={quote.senderEmail} onChange={(event) => setQuoteField('senderEmail', event.target.value)} placeholder="you@company.com" /></label>
               </div>
+              {quoteSequence.error && <p className="form-error" role="alert">Quote number unavailable: {quoteSequence.error}</p>}
               {quoteType === 'renewal' && (
                 <div className="renewal-fields">
                   <div className="renewal-heading"><strong>Renewal coverage</strong><span>Service period covered by this quote</span></div>
@@ -471,17 +500,17 @@ function App() {
           </section>
 
           <section className="preview-column" aria-label="Customer quote preview">
-            <div className="preview-toolbar"><span><span className="preview-dot" /> LIVE PREVIEW</span><button className="preview-print" onClick={() => window.print()} title="Print or save as PDF"><ArrowDownToLine size={15} /> Save as PDF</button></div>
+            <div className="preview-toolbar"><span><span className="preview-dot" /> LIVE PREVIEW</span><button className="preview-print" disabled={quoteSequence.value === null} onClick={() => window.print()} title="Print or save as PDF"><ArrowDownToLine size={15} /> Save as PDF</button></div>
             <article className="quote-paper">
               <div className="quote-paper-topline"><div className="paper-issuer"><span className="paper-brand">{selectedEntity?.name || 'Select issuing entity'}</span>{selectedEntity?.address && <span className="paper-issuer-address">{selectedEntity.address}</span>}</div>{companyLogo && <img className="paper-company-logo" src={companyLogo} alt="Company logo" />}</div>
-              <div className="paper-title-row"><div><h2>Commercial Proposal</h2><p className="paper-proposal-type">{quoteType === 'product' ? 'Product Quote' : 'AMC / Renewal Quote'}</p></div><div className="paper-number"><span>ISSUE DATE</span><strong>{formatProposalDate(quote.date)}</strong><span>QUOTE NUMBER</span><strong>{quote.number || 'Draft'}</strong></div></div>
-              <div className="paper-reference"><strong>Reference:</strong><span>{quote.reference || '—'}</span></div>
+              <div className="paper-title-row"><span aria-hidden="true" /><h2>Commercial Proposal</h2><div className="paper-number"><span>ISSUE DATE</span><strong>{formatProposalDate(quote.date)}</strong><span>QUOTE NUMBER</span><strong>{quoteNumber}</strong></div></div>
+              <div className="paper-reference"><strong>Reference:</strong><span>{quoteType === 'product' ? 'Product' : 'Renewal'} - {quote.reference}</span></div>
               <div className="paper-rule" />
               <div className="paper-parties">
-                <div><span className="paper-label">PREPARED FOR</span><strong>{quote.customer || 'Customer name'}</strong>{quote.customerCompany && <span>{quote.customerCompany}</span>}{quote.customerEmail && <span>{quote.customerEmail}</span>}{quote.customerAddress && <span className="paper-address">{quote.customerAddress}</span>}</div>
-                <div><span className="paper-label">PREPARED BY</span><strong>{selectedEntity?.name || 'Issuing entity'}</strong>{quote.senderEmail && <span>{quote.senderEmail}</span>}</div>
-                <div className="paper-dates"><span><small>VALID UNTIL</small><strong>{formatDate(quote.validUntil)}</strong></span></div>
+                <div className="paper-recipient"><strong>To,</strong>{quote.customer && <span>{quote.customer}</span>}{quote.customerCompany && <span>{quote.customerCompany}</span>}{quote.customerAddress && <span className="paper-address">{quote.customerAddress}</span>}</div>
               </div>
+              <div className="paper-greeting"><p>Dear Sir/Madam,</p><p>Thank you very much for your interest in our products and services. Please find below the best offer as follows:</p></div>
+              <div className="paper-proposal-meta"><div><span className="paper-label">PREPARED BY</span><strong>{selectedEntity?.name || 'Issuing entity'}</strong>{quote.senderEmail && <span>{quote.senderEmail}</span>}</div><div className="paper-dates"><span><small>VALID UNTIL</small><strong>{formatDate(quote.validUntil)}</strong></span></div></div>
               {quoteType === 'renewal' && <div className="paper-renewal"><span className="paper-label">RENEWAL COVERAGE</span><strong>{formatDate(quote.serviceStart)} – {formatDate(quote.serviceEnd)}</strong>{quote.contractReference && <span>Existing agreement: {quote.contractReference}</span>}</div>}
               <table className="paper-table">
                 <thead><tr><th>DESCRIPTION</th><th>QTY</th><th>UNIT PRICE</th><th className="align-right">AMOUNT</th></tr></thead>

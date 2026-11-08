@@ -148,11 +148,11 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .paper-issuer-address { color: #778379; font-size: 8px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; }
 .paper-mark { flex: 0 0 auto; color: #a0a79d; font-size: 8px; font-weight: 600; }
 .paper-company-logo { display: block; flex: 0 0 auto; max-width: 130px; max-height: 56px; object-fit: contain; object-position: right center; }
-.paper-title-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 15px; padding: 30px 0 16px; }
+.paper-title-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 30px 0 16px; }
 .paper-kicker { margin: 0 0 6px; color: #88978a; font-size: 8px; font-weight: 700; }
-.paper-title-row h2 { margin: 0; color: #273e33; font-size: 25px; font-weight: 700; }
-.paper-proposal-type { margin: 5px 0 0; color: #78847a; font-size: 9px; }
+.paper-title-row h2 { margin: 0; color: #273e33; font-size: 23px; font-weight: 700; text-align: center; }
 .paper-number { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-bottom: 3px; }
+.paper-title-row .paper-number { justify-self: end; }
 .paper-number span { color: #9aa398; font-size: 7px; font-weight: 700; }
 .paper-number strong { color: #42584a; font-size: 10px; font-weight: 600; }
 .paper-reference { display: flex; align-items: center; gap: 8px; min-height: 34px; margin: 0 0 14px; padding: 7px 9px; border: 1px solid #e3e8df; border-radius: 3px; color: #5f6e63; font-size: 9px; }
@@ -164,7 +164,14 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .paper-parties > div strong { color: #3e5045; font-size: 10px; font-weight: 700; }
 .paper-label { margin-bottom: 4px; color: #98a195; font-size: 7px; font-weight: 700; }
 .paper-address { white-space: pre-line; }
-.paper-dates { grid-column: 1 / -1; display: flex; gap: 36px; padding-top: 3px; }
+.paper-recipient { grid-column: 1 / -1; }
+.paper-recipient > strong { margin-bottom: 2px; }
+.paper-greeting { margin: -13px 0 20px; color: #657267; font-size: 9px; line-height: 1.6; }
+.paper-greeting p { margin: 0 0 5px; }
+.paper-proposal-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 22px; margin-bottom: 20px; }
+.paper-proposal-meta > div { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; color: #79837a; font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
+.paper-proposal-meta > div strong { color: #3e5045; font-size: 10px; font-weight: 700; }
+.paper-dates { display: flex; gap: 36px; padding-top: 0; }
 .paper-dates span { display: flex; flex-direction: column; gap: 4px; }
 .paper-dates small { color: #a0a79d; font-size: 7px; font-weight: 700; }
 .paper-dates strong { color: #526055; font-size: 9px; font-weight: 600; }
@@ -266,7 +273,8 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .quote-adjustments { gap: 7px; }
   .quote-paper { padding: 27px 19px 22px; }
   .paper-title-row { padding-top: 24px; }
-  .paper-title-row h2 { font-size: 22px; }
+  .paper-title-row { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 5px; }
+  .paper-title-row h2 { font-size: 18px; }
   .paper-company-logo { max-width: 100px; max-height: 46px; }
   .paper-parties { gap: 17px 10px; }
   .paper-dates { gap: 23px; }
