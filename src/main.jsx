@@ -12,6 +12,8 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { parseEnghouseRenewalPdf, parseQuoteWorkbook } from './importer.js';
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
 import './styles.css';
 
 const sampleCatalog = [
@@ -30,10 +32,8 @@ const mappingFields = [
 ];
 
 const makeId = () => Math.random().toString(36).slice(2, 10);
-const entityStorageKey = 'quotegen.entities.v1';
-const quoteSequenceStorageKey = 'quotegen.quote-sequence.v1';
 const maxQuoteSequence = 36 ** 6 - 1;
-function allocateQuoteSequence() {
+function allocateQuoteSequence(quoteSequenceStorageKey) {
   const savedSequence = localStorage.getItem(quoteSequenceStorageKey);
   if (savedSequence !== null && !/^\d+$/.test(savedSequence)) {
     throw new Error('The saved quote sequence is invalid.');
@@ -51,7 +51,7 @@ const emptyEntities = () => Array.from({ length: 5 }, (_, index) => ({
   name: '',
   address: '',
 }));
-const readEntities = () => {
+const readEntities = (entityStorageKey) => {
   try {
     const saved = JSON.parse(localStorage.getItem(entityStorageKey));
     const savedEntities = Array.isArray(saved) ? saved : saved?.entities;
@@ -66,7 +66,7 @@ const readEntities = () => {
     return emptyEntities();
   }
 };
-const readCompanyLogo = () => {
+const readCompanyLogo = (entityStorageKey) => {
   try {
     const saved = JSON.parse(localStorage.getItem(entityStorageKey));
     return typeof saved?.logo === 'string' ? saved.logo : '';
@@ -115,18 +115,20 @@ function detectMapping(headers) {
   }));
 }
 
-function App() {
+function QuoteWorkspace() {
+  const entityStorageKey = 'quotegen.entities.v1';
+  const quoteSequenceStorageKey = 'quotegen.quote-sequence.v1';
   const [quoteType, setQuoteType] = useState('product');
   const [quoteSequence] = useState(() => {
     try {
-      return { value: allocateQuoteSequence(), error: '' };
+      return { value: allocateQuoteSequence(quoteSequenceStorageKey), error: '' };
     } catch (error) {
       return { value: null, error: error instanceof Error ? error.message : 'Browser storage is unavailable.' };
     }
   });
-  const [entities, setEntities] = useState(readEntities);
+  const [entities, setEntities] = useState(() => readEntities(entityStorageKey));
   const [entityDraft, setEntityDraft] = useState(entities);
-  const [companyLogo, setCompanyLogo] = useState(readCompanyLogo);
+  const [companyLogo, setCompanyLogo] = useState(() => readCompanyLogo(entityStorageKey));
   const [companyLogoDraft, setCompanyLogoDraft] = useState(companyLogo);
   const [companyLogoError, setCompanyLogoError] = useState('');
   const [companyLogoReading, setCompanyLogoReading] = useState(false);
@@ -252,25 +254,75 @@ function App() {
         }));
         sheets = [{ name: 'CSV', rows }];
       } else {
-        const { default: readXlsxFile, readSheetNames } = await import('read-excel-file/browser');
-        const names = await readSheetNames(file);
-        sheets = await Promise.all(names.map(async (name) => ({
-          name,
-          rows: await readXlsxFile(file, { sheet: name }),
-        })));
+        if (file.name.toLowerCase().endsWith('.pdf')) {
+          const [{ getDocument, GlobalWorkerOptions }] = await Promise.all([
+            import('pdfjs-dist/legacy/build/pdf.mjs'),
+          ]);
+          GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+          const pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+          const pdfItems = [];
+          for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+            const page = await pdf.getPage(pageNumber);
+            const content = await page.getTextContent();
+            pdfItems.push(...content.items);
+          }
+          const quoteImport = parseEnghouseRenewalPdf(pdfItems);
+          applyQuoteImport(quoteImport, file.name);
+          return;
+        }
+        const { default: readXlsxFile } = await import('read-excel-file/browser');
+        const workbook = await readXlsxFile(file);
+        sheets = workbook.map(({ sheet, data }, index) => ({ name: sheet || `Sheet ${index + 1}`, rows: data }));
       }
-      if (!sheets.length || !sheets[0].rows.length) {
+      if (!sheets.length || !sheets.some((sheet) => sheet.rows.length)) {
         setImportError('This workbook does not contain any rows to import.');
         return;
       }
+      const quoteImport = parseQuoteWorkbook(sheets);
+      if (quoteImport) {
+        applyQuoteImport(quoteImport, file.name);
+        return;
+      }
+      setCatalogSource(file.name);
       setWorkbookSheets(sheets);
       setSelectedSheetName(sheets[0].name);
       setColumnMapping(detectMapping(sheets[0].rows[0]));
-      setCatalogSource(file.name);
     } catch {
       setImportError('We could not read this file. Try an .xlsx workbook or .csv file.');
+    } finally {
+      event.target.value = '';
     }
-    event.target.value = '';
+  }
+
+  function applyQuoteImport(quoteImport, fileName) {
+    setCatalogSource(fileName);
+    setWorkbookSheets([]);
+    if (quoteImport.error) {
+      setImportError(quoteImport.error);
+      return;
+    }
+    const metadata = quoteImport.metadata ?? {};
+    const importedItems = quoteImport.items.map((item) => ({ ...item, id: makeId() }));
+    setCatalog(importedItems.map(({ quantity, ...item }) => item));
+    setLineItems(importedItems);
+    setSelectedProduct('');
+    setQuoteType(quoteImport.quoteType);
+    setQuote((current) => ({
+      ...current,
+      currency: metadata.currency || 'USD',
+      customer: metadata.customer || current.customer,
+      customerCompany: metadata.customerCompany || current.customerCompany,
+      customerEmail: metadata.customerEmail || current.customerEmail,
+      customerAddress: metadata.customerAddress || current.customerAddress,
+      senderEmail: metadata.senderEmail || current.senderEmail,
+      reference: metadata.reference || current.reference,
+      date: metadata.date || current.date,
+      validUntil: metadata.validUntil || current.validUntil,
+      serviceStart: metadata.serviceStart || current.serviceStart,
+      serviceEnd: metadata.serviceEnd || current.serviceEnd,
+      contractReference: metadata.contractReference || current.contractReference,
+    }));
+    setImportError('');
   }
 
   function chooseSheet(name) {
@@ -368,7 +420,7 @@ function App() {
                 <span className="source-details"><strong>{catalogSource}</strong><small>{catalog.length} items available</small></span>
                 <label className="icon-button upload-button" title="Import an Excel workbook" aria-label="Import an Excel workbook">
                   <Upload size={17} />
-                  <input type="file" accept=".xlsx,.csv" onChange={handleWorkbook} />
+                  <input type="file" accept=".xlsx,.csv,.pdf" onChange={handleWorkbook} />
                 </label>
               </div>
               {workbookSheets.length > 0 && (
@@ -400,7 +452,7 @@ function App() {
               )}
               {importError && <p className="form-error" role="alert">{importError}</p>}
               <div className="source-footer">
-                <span>.xlsx or .csv · processed on this device</span>
+                <span>.xlsx, .csv or searchable .pdf · processed on this device</span>
                 {catalogSource !== 'Sample catalog' && <button className="text-button" onClick={resetSampleCatalog}>Use sample list</button>}
                 {catalogSource === 'Sample catalog' && <span className="sample-tag">SAMPLE</span>}
               </div>
@@ -507,7 +559,7 @@ function App() {
               <div className="paper-document-meta">
                 <div className="paper-meta-item"><span>ISSUE DATE</span><strong>{formatProposalDate(quote.date)}</strong></div>
                 <div className="paper-meta-item"><span>QUOTE NUMBER</span><strong>{quoteNumber}</strong></div>
-                <div className="paper-meta-item"><span>VALIDITY</span><strong>{formatDate(quote.validUntil)}</strong></div>
+                <div className="paper-meta-item"><span>VALIDITY</span><strong>{formatProposalDate(quote.validUntil)}</strong></div>
               </div>
               <div className="paper-reference"><strong>Reference:</strong><span>{quoteType === 'product' ? 'Product' : 'Renewal'} - {quote.reference}</span></div>
               <div className="paper-rule" />
@@ -557,4 +609,4 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(<QuoteWorkspace />);

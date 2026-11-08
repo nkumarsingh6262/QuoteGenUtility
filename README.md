@@ -23,6 +23,8 @@ The app runs on http://localhost:5173 by default.
 
 Pushing to `main` builds and deploys the site to [GitHub Pages](https://nkumarsingh6262.github.io/QuoteGenUtility/). The workflow can also be started manually from the repository's Actions tab.
 
-The workbook is processed in the browser and is not uploaded to a server. The first worksheet row should contain column headers; during import, choose the columns for item name and unit price. `.xlsx` and `.csv` files are supported.
+User invitations and authentication are deferred. This release is public, and quote data, entity settings, and numbering are stored in the current browser only; they do not sync between users or devices.
+
+Workbooks and PDFs are processed in the browser and are not uploaded to a server. QuoteGen automatically recognizes the six product and AMC / renewal worksheet layouts in `QuoteGen_Source_Input_Template.xlsx`; other `.xlsx` and `.csv` files use manual column mapping. Searchable Enghouse renewal PDFs matching the provided quotation layout are also supported.
 
 Use the sample catalog to explore the quote workflow without an Excel file. The print action opens the browser's print dialog, where the quote can be printed or saved as a PDF.
