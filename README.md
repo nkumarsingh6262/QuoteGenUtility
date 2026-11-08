@@ -14,8 +14,10 @@ The printed proposal centers the heading and shows the recipient's person name, 
 
 ```bash
 npm install
-npm run dev
+npm start
 ```
+
+The app runs on http://localhost:5173 by default.
 
 ## Publish
 

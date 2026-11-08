@@ -503,14 +503,18 @@ function App() {
             <div className="preview-toolbar"><span><span className="preview-dot" /> LIVE PREVIEW</span><button className="preview-print" disabled={quoteSequence.value === null} onClick={() => window.print()} title="Print or save as PDF"><ArrowDownToLine size={15} /> Save as PDF</button></div>
             <article className="quote-paper">
               <div className="quote-paper-topline"><div className="paper-issuer"><span className="paper-brand">{selectedEntity?.name || 'Select issuing entity'}</span>{selectedEntity?.address && <span className="paper-issuer-address">{selectedEntity.address}</span>}</div>{companyLogo && <img className="paper-company-logo" src={companyLogo} alt="Company logo" />}</div>
-              <div className="paper-title-row"><span aria-hidden="true" /><h2>Commercial Proposal</h2><div className="paper-number"><span>ISSUE DATE</span><strong>{formatProposalDate(quote.date)}</strong><span>QUOTE NUMBER</span><strong>{quoteNumber}</strong></div></div>
+              <div className="paper-title-row"><h2>Commercial Proposal</h2></div>
+              <div className="paper-document-meta">
+                <div className="paper-meta-item"><span>ISSUE DATE</span><strong>{formatProposalDate(quote.date)}</strong></div>
+                <div className="paper-meta-item"><span>QUOTE NUMBER</span><strong>{quoteNumber}</strong></div>
+                <div className="paper-meta-item"><span>VALIDITY</span><strong>{formatDate(quote.validUntil)}</strong></div>
+              </div>
               <div className="paper-reference"><strong>Reference:</strong><span>{quoteType === 'product' ? 'Product' : 'Renewal'} - {quote.reference}</span></div>
               <div className="paper-rule" />
               <div className="paper-parties">
                 <div className="paper-recipient"><strong>To,</strong>{quote.customer && <span>{quote.customer}</span>}{quote.customerCompany && <span>{quote.customerCompany}</span>}{quote.customerAddress && <span className="paper-address">{quote.customerAddress}</span>}</div>
               </div>
               <div className="paper-greeting"><p>Dear Sir/Madam,</p><p>Thank you very much for your interest in our products and services. Please find below the best offer as follows:</p></div>
-              <div className="paper-proposal-meta"><div><span className="paper-label">PREPARED BY</span><strong>{selectedEntity?.name || 'Issuing entity'}</strong>{quote.senderEmail && <span>{quote.senderEmail}</span>}</div><div className="paper-dates"><span><small>VALID UNTIL</small><strong>{formatDate(quote.validUntil)}</strong></span></div></div>
               {quoteType === 'renewal' && <div className="paper-renewal"><span className="paper-label">RENEWAL COVERAGE</span><strong>{formatDate(quote.serviceStart)} – {formatDate(quote.serviceEnd)}</strong>{quote.contractReference && <span>Existing agreement: {quote.contractReference}</span>}</div>}
               <table className="paper-table">
                 <thead><tr><th>DESCRIPTION</th><th>QTY</th><th>UNIT PRICE</th><th className="align-right">AMOUNT</th></tr></thead>
