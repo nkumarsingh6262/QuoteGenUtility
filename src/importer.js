@@ -6,6 +6,11 @@ function text(value) {
   return value == null ? '' : String(value).trim();
 }
 
+function meaningful(value) {
+  const valueText = text(value);
+  return valueText !== '' && !['na', 'none', 'null', 'n/a', '-'].includes(normalize(valueText));
+}
+
 function amount(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   const raw = text(value).replace(/[,$\s]/g, '').replace(/^\((.*)\)$/, '-$1');
@@ -53,6 +58,50 @@ function metadataFrom(rows) {
   return metadata;
 }
 
+function valueAfterLabel(rows, label, labelColumn) {
+  for (const row of rows) {
+    if (normalize(row[labelColumn]) !== label) continue;
+    return row.slice(labelColumn + 1).find(meaningful) ?? '';
+  }
+  return '';
+}
+
+function ribbonProductMetadata(rows) {
+  const labels = new Set([
+    'opportunityno', 'quotedate', 'qouteexpirationdate', 'accountmanager',
+    'projectname', 'opportunityname', 'endcustomer',
+  ]);
+  const endCustomer = rows.flatMap((row) => row.map(text))
+    .map((cell) => cell.match(/^end\s+customer\s*:\s*(.+)$/i)?.[1] ?? '')
+    .find(Boolean) ?? '';
+  return {
+    customerCompany: endCustomer,
+    reference: text(labelValue(rows, 'opportunityno', labels)),
+    date: dateInput(labelValue(rows, 'quotedate', labels)),
+    validUntil: dateInput(labelValue(rows, 'qouteexpirationdate', labels)),
+    currency: 'USD',
+  };
+}
+
+function enghouseProductMetadata(rows) {
+  return {
+    customerCompany: text(valueAfterLabel(rows, 'company', 0)),
+    customer: text(valueAfterLabel(rows, 'name', 0)),
+    customerEmail: text(valueAfterLabel(rows, 'email', 0)),
+    senderEmail: text(valueAfterLabel(rows, 'email', 4)),
+    reference: text(valueAfterLabel(rows, 'quote', 4)),
+    date: dateInput(valueAfterLabel(rows, 'date', 0)),
+    currency: 'USD',
+  };
+}
+
+function metadataForSheet(sheet) {
+  const name = normalize(sheet.name);
+  if (name === 'quoteexcel') return ribbonProductMetadata(sheet.rows);
+  if (name === 'project1') return enghouseProductMetadata(sheet.rows);
+  return metadataFrom(sheet.rows);
+}
+
 function typeFor(headers, vendor, sheetName) {
   const has = (...names) => names.some((name) => headers.includes(name));
   const source = normalize(vendor || sheetName);
@@ -83,8 +132,19 @@ function sectionName(rows, headerIndex) {
   return label ? label.split(':').slice(1).join(':').trim() : '';
 }
 
+function dataSectionName(row) {
+  const values = row.map(text).filter(Boolean);
+  if (values.length !== 1) return '';
+  const value = values[0];
+  if (/^(configuration|system number group)\s*:/i.test(value)) {
+    return value.split(':').slice(1).join(':').trim();
+  }
+  return /^(?:primary site|dr site|staging environment|maintenance)$/i.test(value) ? value : '';
+}
+
 function lineFromRow(type, row, headers, section) {
   if (/^add another configuration heading/i.test(row.map(text).join(' ').trim())) return null;
+  if (row.map(normalize).some((cell) => cell.includes('subtotal') || cell === 'total')) return null;
   const hasItemData = row.some((value, index) => {
     const cell = text(value);
     return cell
@@ -94,6 +154,9 @@ function lineFromRow(type, row, headers, section) {
   if (!hasItemData) return null;
 
   const quantity = amount(valueFor(row, headers, 'quantity', 'qty'));
+  const hasItemIdentifier = ['item', 'itemname', 'enghousesku', 'servicepartnumber', 'servicepart', 'partnumber']
+    .some((field) => meaningful(valueFor(row, headers, field)));
+  if (quantity == null && !hasItemIdentifier) return null;
   const missing = [];
   if (quantity == null || quantity <= 0) missing.push('positive quantity');
 
@@ -109,7 +172,9 @@ function lineFromRow(type, row, headers, section) {
     description = text(valueFor(row, headers, 'itemdescription'));
     if (!name) missing.push('item');
     if (!description) missing.push('item description');
-    rawPrice = amount(valueFor(row, headers, 'netpriceusd', 'netprice'));
+    rawPrice = amount(valueFor(row, headers, 'extendednetpriceusd', 'extendednetprice'));
+    isLineTotal = rawPrice != null;
+    if (rawPrice == null) rawPrice = amount(valueFor(row, headers, 'netpriceusd', 'netprice'));
     if (rawPrice == null) rawPrice = amount(valueFor(row, headers, 'listpriceusd'));
   } else if (type === 'enghouse-product') {
     sku = text(valueFor(row, headers, 'enghousesku'));
@@ -173,10 +238,119 @@ function lineFromRow(type, row, headers, section) {
   };
 }
 
+function labelValue(rows, targetLabel, labels) {
+  for (const row of rows) {
+    const labelIndex = row.findIndex((value) => normalize(value) === targetLabel);
+    if (labelIndex < 0) continue;
+    for (let index = labelIndex + 1; index < row.length; index += 1) {
+      const value = row[index];
+      if (labels.has(normalize(value))) break;
+      if (meaningful(value)) return value;
+    }
+  }
+  return '';
+}
+
+function parseRibbonRenewalWorkbook(sheets) {
+  const sheet = sheets.find((entry) => normalize(entry.name) === 'renewalquote');
+  if (!sheet) return null;
+
+  const headerIndex = sheet.rows.findIndex((row) => {
+    const headers = row.map(normalize);
+    return headers.includes('systemnumbergroup')
+      && headers.includes('servicepartnumber')
+      && headers.includes('extendednetprice')
+      && headers.includes('extendedlistprice')
+      && headers.includes('extendedsystemsubtotal');
+  });
+  if (headerIndex < 0) return null;
+
+  const labels = new Set([
+    'description', 'companyname', 'attention', 'email', 'opportunitynumber',
+    'quotenumber', 'endcustomer', 'partner', 'quotedate', 'expirationdate', 'currency',
+    'ribbonaccountmanager', 'preparedby',
+  ]);
+  const metadata = {
+    customerCompany: text(labelValue(sheet.rows, 'companyname', labels))
+      || text(labelValue(sheet.rows, 'partner', labels))
+      || text(labelValue(sheet.rows, 'endcustomer', labels)),
+    customer: text(labelValue(sheet.rows, 'attention', labels)),
+    customerEmail: text(labelValue(sheet.rows, 'email', labels)),
+    reference: text(labelValue(sheet.rows, 'quotenumber', labels)),
+    date: dateInput(labelValue(sheet.rows, 'quotedate', labels)),
+    validUntil: dateInput(labelValue(sheet.rows, 'expirationdate', labels)),
+    currency: text(labelValue(sheet.rows, 'currency', labels)) || 'USD',
+  };
+
+  const items = [];
+  const invalidRows = [];
+  for (const [offset, row] of sheet.rows.slice(headerIndex + 1).entries()) {
+    const servicePart = meaningful(row[5]) ? text(row[5]) : '';
+    const serviceDescription = meaningful(row[13]) ? text(row[13]) : '';
+    const product = meaningful(row[16]) ? text(row[16]) : '';
+    const productDescription = meaningful(row[19]) ? text(row[19]) : '';
+    const quantity = amount(row[34]);
+
+    if (!servicePart && !product && quantity == null) continue;
+
+    const missing = [];
+    if (quantity == null || quantity <= 0) missing.push('positive quantity');
+    if (!servicePart) missing.push('service part number');
+    if (!serviceDescription) missing.push('service description');
+    if (!product) missing.push('product code');
+    if (!productDescription) missing.push('product description');
+
+    const discountedTotal = amount(row[40]);
+    const netTotal = amount(row[38]);
+    const discount = amount(row[39]);
+    const discountRate = discount == null ? null : discount > 1 ? discount / 100 : discount;
+    const lineTotal = discountedTotal ?? (netTotal == null
+      ? null
+      : discountRate != null && discountRate >= 0 && discountRate <= 1
+        ? netTotal * (1 - discountRate)
+        : netTotal);
+    if (lineTotal == null || lineTotal < 0) missing.push('price');
+
+    if (missing.length) {
+      invalidRows.push(`Renewal Quote row ${headerIndex + offset + 2}: ${missing.join(', ')}`);
+      continue;
+    }
+
+    items.push({
+      sku: servicePart,
+      name: serviceDescription,
+      description: [product, productDescription].filter(Boolean).join(' · '),
+      category: 'ribbon-renewal',
+      quantity,
+      price: lineTotal / quantity,
+      serviceStart: dateInput(row[35]),
+      serviceEnd: dateInput(row[36]),
+    });
+  }
+
+  if (invalidRows.length) {
+    return { error: `Complete the required fields in these rows: ${invalidRows.slice(0, 4).join('; ')}.` };
+  }
+  if (!items.length) return { error: 'No Ribbon renewal line items were found in this workbook.' };
+
+  metadata.serviceStart = items.find((item) => item.serviceStart)?.serviceStart ?? '';
+  metadata.serviceEnd = items.find((item) => item.serviceEnd)?.serviceEnd ?? '';
+  const lineSubtotal = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+  const totalRow = sheet.rows.find((row) => normalize(row[40]) === 'total' && amount(row[41]) != null);
+  const quotedTotal = amount(totalRow?.[41]);
+  if (lineSubtotal > 0 && quotedTotal != null && quotedTotal >= 0 && quotedTotal < lineSubtotal) {
+    metadata.discount = ((lineSubtotal - quotedTotal) / lineSubtotal * 100).toFixed(6);
+  }
+  return { items, quoteType: 'renewal', metadata };
+}
+
 export function parseQuoteWorkbook(sheets) {
+  const ribbonRenewal = parseRibbonRenewalWorkbook(sheets);
+  if (ribbonRenewal) return ribbonRenewal;
+
   const tables = [];
   for (const sheet of sheets) {
-    const metadata = metadataFrom(sheet.rows);
+    const metadata = metadataForSheet(sheet);
     const vendor = metadata.vendor || '';
     for (const [index, row] of sheet.rows.entries()) {
       const headers = row.map(normalize);
@@ -192,8 +366,14 @@ export function parseQuoteWorkbook(sheets) {
   const importedMetadata = {};
   for (const table of tables) {
     const nextHeader = tables.find((candidate) => candidate.sheet === table.sheet && candidate.index > table.index)?.index ?? table.sheet.rows.length;
+    let activeSection = table.section;
     for (const [offset, row] of table.sheet.rows.slice(table.index + 1, nextHeader).entries()) {
-      const parsed = lineFromRow(table.type, row, table.headers, table.section);
+      const newSection = dataSectionName(row);
+      if (newSection) {
+        activeSection = newSection;
+        continue;
+      }
+      const parsed = lineFromRow(table.type, row, table.headers, activeSection);
       if (parsed?.error) {
         invalidRows.push(`${table.sheet.name} row ${table.index + offset + 2}: ${parsed.error}`);
       } else if (parsed?.item) {
@@ -204,6 +384,9 @@ export function parseQuoteWorkbook(sheets) {
         importedMetadata.serviceEnd ||= item.serviceEnd;
         importedMetadata.contractReference ||= item.contractReference;
       }
+    }
+    for (const key of ['customer', 'customerCompany', 'customerEmail', 'senderEmail', 'reference', 'date', 'validUntil', 'currency', 'discount']) {
+      if (table.metadata[key]) importedMetadata[key] ||= table.metadata[key];
     }
     if (table.metadata.endcustomer) importedMetadata.customerCompany ||= table.metadata.endcustomer;
     if (table.metadata.quotenumber) importedMetadata.reference ||= table.metadata.quotenumber;

@@ -310,6 +310,7 @@ function QuoteWorkspace() {
     setQuote((current) => ({
       ...current,
       currency: metadata.currency || 'USD',
+      discount: metadata.discount || current.discount,
       customer: metadata.customer || current.customer,
       customerCompany: metadata.customerCompany || current.customerCompany,
       customerEmail: metadata.customerEmail || current.customerEmail,

@@ -25,6 +25,6 @@ Pushing to `main` builds and deploys the site to [GitHub Pages](https://nkumarsi
 
 User invitations and authentication are deferred. This release is public, and quote data, entity settings, and numbering are stored in the current browser only; they do not sync between users or devices.
 
-Workbooks and PDFs are processed in the browser and are not uploaded to a server. QuoteGen automatically recognizes the six product and AMC / renewal worksheet layouts in `QuoteGen_Source_Input_Template.xlsx`; other `.xlsx` and `.csv` files use manual column mapping. Searchable Enghouse renewal PDFs matching the provided quotation layout are also supported.
+Workbooks and PDFs are processed in the browser and are not uploaded to a server. QuoteGen automatically recognizes the six product and AMC / renewal worksheet layouts in `QuoteGen_Source_Input_Template.xlsx`, as well as Ribbon renewal quote workbooks with a `Renewal Quote` sheet. Other `.xlsx` and `.csv` files use manual column mapping. Searchable Enghouse renewal PDFs matching the provided quotation layout are also supported.
 
 Use the sample catalog to explore the quote workflow without an Excel file. The print action opens the browser's print dialog, where the quote can be printed or saved as a PDF.
